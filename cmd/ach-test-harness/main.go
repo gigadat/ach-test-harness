@@ -14,15 +14,17 @@ import (
 )
 
 func main() {
+	logger := log.NewDefaultLogger().
+		Set("app", log.String("ach-test-harness")).
+		Set("version", log.String(achtestharness.Version))
+
 	env := &service.Environment{
-		Logger: log.NewDefaultLogger().
-			Set("app", log.String("ach-test-harness")).
-			Set("version", log.String(achtestharness.Version)),
+		Logger: logger,
 	}
 
 	env, err := service.NewEnvironment(env)
 	if err != nil {
-		env.Logger.Fatal().LogErrorf("Error loading up environment: %v", err)
+		logger.Fatal().LogErrorf("Error loading up environment: %v", err)
 		os.Exit(1)
 	}
 	defer env.Shutdown()

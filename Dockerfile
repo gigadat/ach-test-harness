@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y make gcc g++ ca-certificates
 
 COPY . .
 
-RUN VERSION=${VERSION} make build
+RUN VERSION=${VERSION} make update build
 
 FROM debian:stable-slim AS runtime
 LABEL maintainer="Moov <oss@moov.io>"

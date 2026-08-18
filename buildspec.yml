@@ -48,7 +48,9 @@ phases:
       - REPOSITORY_URL_APP="${ECR_REGISTRY}/${ECR_REPOSITORY}"
       - echo Build started on `date`
       - go mod download
+      - go install github.com/markbates/pkger/cmd/pkger@latest
       - go mod vendor
+      - pkger -include /configs/config.default.yml
       - go test ./... -count=1 -short
       - echo Building the Docker images...
       - docker build --build-arg VERSION="${IMAGE_TAG}" -t ${REPOSITORY_URL_APP}:latest .
