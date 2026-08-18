@@ -1,0 +1,79 @@
+# AWS CodeBuild — ECS deploy via CodePipeline (development branch)
+# CodeBuild project must set: privileged_mode = true, artifacts = CODEPIPELINE
+# Env from Terraform: ECR_REGISTRY, ECR_REPOSITORY, ECS_TASK_DEFINITION
+# ECS task container name must match: app
+#
+# Docker Hub: set DOCKERHUB_USERNAME and DOCKERHUB_PASSWORD on the CodeBuild project
+# (e.g. Secrets Manager) to avoid Docker Hub pull rate limits (429).
+
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    GOPRIVATE: "github.com/moov-io"
+
+phases:
+  install:
+    commands:
+      - echo Install starting
+      - echo logging into DockerHub ...
+      - echo "${DOCKERHUB_PASSWORD}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+      # Match go.mod; bump when go.mod toolchain changes
+      - export GO_VERSION=1.25.0
+      - |
+        curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz
+        rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz
+      - export PATH=/usr/local/go/bin:$PATH
+      - go version
+
+  pre_build:
+    commands:
+      - export PATH=/usr/local/go/bin:$PATH
+      - aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin ${ECR_REGISTRY}
+      - OLD_ECS_TASK_DEFINITION_REVISION=$(aws ecs describe-task-definition --task-definition ${ECS_TASK_DEFINITION} --output text --query 'taskDefinition.revision')
+      - NEW_ECS_TASK_DEFINITION_REVISION=$((OLD_ECS_TASK_DEFINITION_REVISION + 1))
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG="v${NEW_ECS_TASK_DEFINITION_REVISION}.${COMMIT_HASH:-latest}"
+      - REPOSITORY_URL_APP="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+      - echo "IMAGE_TAG=${IMAGE_TAG} REPOSITORY_URL_APP=${REPOSITORY_URL_APP}"
+
+  build:
+    commands:
+      - export PATH=/usr/local/go/bin:$PATH
+      - OLD_ECS_TASK_DEFINITION_REVISION=$(aws ecs describe-task-definition --task-definition ${ECS_TASK_DEFINITION} --output text --query 'taskDefinition.revision')
+      - NEW_ECS_TASK_DEFINITION_REVISION=$((OLD_ECS_TASK_DEFINITION_REVISION + 1))
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG="v${NEW_ECS_TASK_DEFINITION_REVISION}.${COMMIT_HASH:-latest}"
+      - REPOSITORY_URL_APP="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+      - echo Build started on `date`
+      - go mod download
+      - go mod vendor
+      - go test ./... -count=1 -short
+      - echo Building the Docker images...
+      - docker build --build-arg VERSION="${IMAGE_TAG}" -t ${REPOSITORY_URL_APP}:latest .
+      - docker tag ${REPOSITORY_URL_APP}:latest ${REPOSITORY_URL_APP}:$IMAGE_TAG
+
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo pushing to repos...
+      - OLD_ECS_TASK_DEFINITION_REVISION=$(aws ecs describe-task-definition --task-definition ${ECS_TASK_DEFINITION} --output text --query 'taskDefinition.revision')
+      - NEW_ECS_TASK_DEFINITION_REVISION=$((OLD_ECS_TASK_DEFINITION_REVISION + 1))
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG="v${NEW_ECS_TASK_DEFINITION_REVISION}.${COMMIT_HASH:-latest}"
+      - REPOSITORY_URL_APP="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+      - docker push ${REPOSITORY_URL_APP}:latest
+      - docker push ${REPOSITORY_URL_APP}:$IMAGE_TAG
+      - echo Writing image definitions file...
+      - printf '[{"name":"app","imageUri":"%s"}]' ${REPOSITORY_URL_APP}:$IMAGE_TAG > image-definitions.json
+      - cat image-definitions.json
+
+artifacts:
+  files:
+    - image-definitions.json
+
+cache:
+  paths:
+    - "/root/go/pkg/mod/**/*"
+    - "/root/.cache/go-build/**/*"
