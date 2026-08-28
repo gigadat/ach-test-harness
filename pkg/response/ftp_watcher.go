@@ -47,8 +47,13 @@ func (notify *FTPWatcher) AfterFilePut(ctx *ftp.Context, dstPath string, size in
 
 	notify.logger.Info().Log(fmt.Sprintf("accepting file at %s", dstPath))
 
+	// if err != nil {
+	// 	notify.logger.Error().Log(fmt.Sprintf("error with file %s: %v", dstPath, err))
+	// }
+
 	if err != nil {
 		notify.logger.Error().Log(fmt.Sprintf("error with file %s: %v", dstPath, err))
+		return
 	}
 
 	// Grab a file descriptor from the server driver
@@ -72,6 +77,7 @@ func (notify *FTPWatcher) AfterFilePut(ctx *ftp.Context, dstPath string, size in
 	if err != nil {
 		span.RecordError(err)
 		notify.logger.Error().Log(fmt.Sprintf("ftp: error reading ACH file %s: %v", dstPath, err))
+		return
 	}
 	if err := file.Create(); err != nil {
 		notify.logger.Error().Log(fmt.Sprintf("ftp: error creating file %s: %v", dstPath, err))
