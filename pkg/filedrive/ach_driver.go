@@ -40,19 +40,57 @@ func (d *ACHDriver) PutFile(ctx *server.Context, path string, r io.Reader, offse
 
 	d.logger.Info().Log(fmt.Sprintf("receiving file for %s", path))
 
-	// Read the file that was uploaded
+	// // Read the file that was uploaded
+	// var buf bytes.Buffer
+	// tee := io.TeeReader(r, &buf)
+
+	// reader := ach.NewReader(tee)
+	// reader.SetValidation(d.validateOpts)
+
+	// file, err := reader.Read()
+	// if err != nil {
+	// 	span.RecordError(err)
+	// 	d.logger.Error().Log(fmt.Sprintf("ftp: error reading ACH file %s: %v", path, err))
+	// 	return 0, err
+	// }
+
 	var buf bytes.Buffer
+
+	d.logger.Info().Log(fmt.Sprintf(
+		"FTP PutFile: incoming reader type=%T",
+		r,
+	))
+
 	tee := io.TeeReader(r, &buf)
 
+	d.logger.Info().Log("FTP PutFile: creating ACH reader")
+
 	reader := ach.NewReader(tee)
+
+	d.logger.Info().Log("FTP PutFile: ACH reader created")
+
 	reader.SetValidation(d.validateOpts)
 
 	file, err := reader.Read()
+
+	d.logger.Info().Log(fmt.Sprintf(
+		"FTP PutFile: ACH reader finished, buffer size=%d, err=%v",
+		buf.Len(),
+		err,
+	))
+
 	if err != nil {
 		span.RecordError(err)
-		d.logger.Error().Log(fmt.Sprintf("ftp: error reading ACH file %s: %v", path, err))
+		d.logger.Error().Log(fmt.Sprintf(
+			"ftp: error reading ACH file %s: %v",
+			path,
+			err,
+		))
 		return 0, err
 	}
+
+
+
 
 	if err := file.Create(); err != nil {
 		d.logger.Error().Log(fmt.Sprintf("ftp: error creating file %s: %v", path, err))

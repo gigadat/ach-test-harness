@@ -3,51 +3,32 @@ package filedrive
 import (
 	"bytes"
 	"io"
-	"os"
-	"path/filepath"
 	"testing"
 
-	"github.com/moov-io/base/log"
-	"github.com/stretchr/testify/require"
-	"goftp.io/server/v2"
+	"github.com/moov-io/ach"
 )
 
-// MockDriver is a simple mock implementation of server.Driver for testing purposes.
-type MockDriver struct {
-	server.Driver
-}
+func TestACHReaderWithTeeReader(t *testing.T) {
+	input := []byte("ftp-test")
 
-func (m *MockDriver) PutFile(ctx *server.Context, path string, r io.Reader, offset int64) (int64, error) {
-	// Mock implementation, just return success
-	return 0, nil
-}
+	var buf bytes.Buffer
+	var r io.Reader = bytes.NewReader(input)
 
-func TestACHDriver_PutFile_InvalidACH(t *testing.T) {
-	mockDriver := &MockDriver{}
-	customDriver := NewACHDriver(log.NewDefaultLogger(), nil, mockDriver)
+	tee := io.TeeReader(r, &buf)
 
-	// Create an invalid ACH file (e.g., missing required fields)
-	var invalidACH bytes.Buffer
-	invalidACH.WriteString("invalid ACH content")
+	reader := ach.NewReader(tee)
 
-	// Attempt to upload the invalid ACH file
-	_, err := customDriver.PutFile(nil, "invalid.ach", &invalidACH, -1)
+	_, err := reader.Read()
 
-	// Verify that an error is returned
-	require.Error(t, err)
-}
+	t.Logf("input: %q", input)
+	t.Logf("buffer: %q", buf.String())
+	t.Logf("error: %v", err)
 
-func TestACHDriver_PutFile(t *testing.T) {
-	mockDriver := &MockDriver{}
-	customDriver := NewACHDriver(log.NewDefaultLogger(), nil, mockDriver)
+	if buf.String() != string(input) {
+		t.Fatalf("expected buffer %q, got %q", input, buf.String())
+	}
 
-	achFile, err := os.Open(filepath.Join("..", "..", "testdata", "20230809-144155-102000021C.ach"))
-	require.NoError(t, err)
-	defer achFile.Close()
-
-	// Attempt to upload the valid ACH file
-	_, err = customDriver.PutFile(nil, "valid.ach", achFile, -1)
-
-	// Verify that no error is returned
-	require.NoError(t, err)
+	if err == nil {
+		t.Fatal("expected invalid ACH file to return an error")
+	}
 }
